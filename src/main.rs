@@ -1,6 +1,6 @@
 use std::f32::consts;
 
-use log::error;
+use log::{error, info};
 use pixels::{Error, Pixels, SurfaceTexture};
 use winit::dpi::LogicalSize;
 use winit::event::{Event, VirtualKeyCode};
@@ -8,11 +8,12 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 use winit_input_helper::WinitInputHelper;
 
-const WIDTH: u32 = 320 * 2;
-const HEIGHT: u32 = 240 * 2;
-const FACTOR: u32 = 2;
+const WIDTH: u32 = 320;
+const HEIGHT: u32 = 240;
+const FACTOR: u32 = 4;
 const WINDOW_WIDTH: f64 = (WIDTH * FACTOR) as f64;
 const WINDOW_HEIGHT: f64 = (HEIGHT * FACTOR) as f64;
+const FOV: f32 = 90.;
 
 fn main() -> Result<(), Error> {
     env_logger::init();
@@ -67,55 +68,51 @@ fn main() -> Result<(), Error> {
 
             let left = input.key_held(VirtualKeyCode::Left);
             let right = input.key_held(VirtualKeyCode::Right);
-            let forwards = input.key_held(VirtualKeyCode::Up);
-            let backwards = input.key_held(VirtualKeyCode::Down);
+            let forwards = input.key_held(VirtualKeyCode::Up) || input.key_held(VirtualKeyCode::W);
+            let backwards = input.key_held(VirtualKeyCode::Down) || input.key_held(VirtualKeyCode::S);
+            let go_right = input.key_held(VirtualKeyCode::D);
+            let go_left = input.key_held(VirtualKeyCode::A);
 
-            redraw = redraw || (left || right || forwards || backwards);
+            redraw = redraw || (left || right || forwards || backwards || go_left || go_right);
 
-
-            if input.key_pressed(VirtualKeyCode::E) {
-                redraw = world.set_dist(Dist::Euclid) || redraw;
+            if input.key_pressed_os(VirtualKeyCode::Plus) {
+                world.fov += 5.;
+                info!("fov: {}", world.fov);
+                redraw = true;
             }
-            if input.key_pressed(VirtualKeyCode::W) {
-                redraw = world.set_dist(Dist::Perp) || redraw;
-            }
-            if input.key_pressed(VirtualKeyCode::Q) {
-                redraw = world.set_dist(Dist::PerpQuick) || redraw;
+            if input.key_pressed_os(VirtualKeyCode::Minus) {
+                world.fov -= 5.;
+                info!("fov: {}", world.fov);
+                redraw = true;
             }
 
             if redraw {
-                world.update(left, right, forwards, backwards);
+                world.update(left, right, forwards, backwards, go_left, go_right);
                 window.request_redraw();
             }
         }
     });
 }
 
-#[derive(PartialEq, Eq)]
-enum Dist {
-    Euclid,
-    Perp,
-    PerpQuick,
-}
+pub mod map;
+
+use self::map::*;
 
 /// Representation of the application state. In this example, a box will bounce around the screen.
 struct World {
-    player_x: f32,
-    player_y: f32,
+    player_p: Point2,
     player_angle: f32,
-    dist_method: Dist,
-    grid: [[u8; 16]; 16],
+    map: Map<16, 16>,
+    fov: f32,
 }
 
 impl World {
     /// Create a new `World` instance that can draw a moving box.
     fn new() -> Self {
         Self {
-            player_x: 4.,
-            player_y: 4.,
+            player_p: Point2::new(6., 6.),
             player_angle: 0.,
-            dist_method: Dist::Euclid,
-            grid: [
+            map: Map {grid: [
                 [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
                 [1, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
                 [1, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
@@ -132,42 +129,13 @@ impl World {
                 [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
                 [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
                 [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-            ]
-        }
-    }
-
-    fn set_dist(&mut self, dist: Dist) -> bool {
-        let changed = self.dist_method != dist;
-        self.dist_method = dist;
-        changed
-    }
-
-    /// Returns distance to wall from origin and wall material
-    fn ray_cast(&self, origin_x: f32, origin_y: f32, angle: f32) -> (u8, Distance) {
-        let (mut cx, mut cy) = (origin_x, origin_y);
-        let (dy, dx) = angle.sin_cos();
-        let (dy, dx) = (dy * 0.1, dx * 0.1);
-
-        loop {
-            let x = cx.ceil() as isize as usize;
-            let y = cy.ceil() as isize as usize;
-            let mat = self.grid.get(y).and_then(|a| a.get(x)).copied().unwrap_or(255);
-            if mat != 0 {
-                break (mat, Distance {
-                    x1: origin_x,
-                    y1: origin_y,
-                    x2: cx,
-                    y2: cy,
-                });
-            }
-
-            cx += dx;
-            cy += dy;
+            ]},
+            fov: FOV,
         }
     }
 
     /// Update the `World` internal state; bounce the box around the screen.
-    fn update(&mut self, left: bool, right: bool, forwards: bool, backwards: bool) {
+    fn update(&mut self, left: bool, right: bool, forwards: bool, backwards: bool, go_left: bool, go_right: bool) {
         const TURN_SPEED: f32 = 0.05;
         const WALK_SPEED: f32 = 0.05;
 
@@ -176,11 +144,15 @@ impl World {
             self.player_angle %= consts::TAU;
         }
 
-        if forwards || backwards {
+        if forwards || backwards || go_left || go_right {
             let (dy, dx) = self.player_angle.sin_cos();
-            let speed = WALK_SPEED * (forwards as i8 - backwards as i8) as f32;
-            self.player_x += speed * dx;
-            self.player_y += speed * dy;
+            let dv = Vector2::new(dx, dy);
+            let dp = dv * (forwards as i8 - backwards as i8) as f32 + dv.hat() * (go_right as i8 - go_left as i8) as f32;
+            let dp = dp.set_len(WALK_SPEED);
+            let cast = self.map.ray_cast(self.player_p, dp, true);
+            if cast.full() {
+                self.player_p = cast.into_point();
+            }
         }
     }
 
@@ -188,17 +160,18 @@ impl World {
     ///
     /// Assumes the default texture format: `wgpu::TextureFormat::Rgba8UnormSrgb`
     fn draw(&self, frame: &mut [u8]) {
-        for (x, angle) in (0..WIDTH).map(|x| (x, self.player_angle - consts::FRAC_PI_4 + consts::FRAC_PI_2 * x as f32 / WIDTH as f32)) {
-            let (mat, dist) = self.ray_cast(self.player_x, self.player_y, angle);
+        let fov_rad = self.fov * consts::PI / 180.;
+        for (x, angle) in (0..WIDTH).map(|x| (x, self.player_angle - 0.5 * fov_rad + fov_rad * x as f32 / WIDTH as f32)) {
+            let (mat, dist) = {
+                let (y, x) = angle.sin_cos();
+                let cast = self.map.ray_cast(self.player_p, Vector2::new(x, y), false);
 
-            let dist = match self.dist_method {
-                Dist::Euclid => dist.euclid(),
-                Dist::Perp => dist.perp(self.player_angle),
-                Dist::PerpQuick => dist.perp_d(angle - self.player_angle),
+                (cast.material().unwrap_or(255), (cast.into_point() - self.player_p).norm() * (angle - self.player_angle).cos())
             };
 
             //Calculate height of line to draw on screen
-            let line_height = (HEIGHT as f32 / dist) as u32;
+            let line_height = HEIGHT as f32 / dist;
+            let line_height = if line_height.is_infinite() { HEIGHT } else { line_height as u32 };
 
             //calculate lowest and highest pixel to fill in current stripe
             let mut draw_start = -(line_height as i32) / 2 + HEIGHT as i32 / 2;
@@ -216,12 +189,7 @@ impl World {
                 let over_ground = y <= draw_end;
 
                 let rgba = match (over_ground, below_ceiling) {
-                    (true, true) => match mat {
-                        1 => [0xff, 0xff, 0xff, 0xff],
-                        2 => [0x00, 0xff, 0x00, 0xff],
-                        255 => [0x00, 0x00, 0x00, 0xff],
-                        _ => unreachable!(),
-                    }
+                    (true, true) => rgba(mat),
                     (true, false) => [0x00, 0x00, 0xff, 0xff],
                     (false, true) => [0xff, 0x00, 0x00, 0xff],
                     (false, false) => unreachable!(),
@@ -231,45 +199,5 @@ impl World {
                 frame[i*4..i*4+4].copy_from_slice(&rgba);
             }
         }
-    }
-}
-
-const fn index_to_coords(i: usize) -> (u32, u32) {
-    let x = (i % WIDTH as usize) as u32;
-    let y = (i / WIDTH as usize) as u32;
-
-    (x, y)
-}
-
-const fn coords_to_index(x: u32, y: u32) -> usize {
-    y as usize * WIDTH as usize + x as usize
-}
-
-#[test]
-fn test() {
-    let (x, y) = index_to_coords(124);
-    assert_eq!(index_to_coords(124), index_to_coords(coords_to_index(x, y)));
-    assert_eq!(124, coords_to_index(x, y));
-}
-
-struct Distance {
-    x1: f32,
-    y1: f32,
-
-    x2: f32,
-    y2: f32,
-}
-
-impl Distance {
-    fn euclid(self) -> f32 {
-        (self.x1-self.x2).hypot(self.y1-self.y2)
-    }
-    fn perp(self, angle: f32) -> f32 {
-        let (face_y, face_x) = angle.sin_cos();
-        
-        (self.x2 - self.x1) * face_x + (self.y2 - self.y1) * face_y
-    }
-    fn perp_d(self, angle_diff: f32) -> f32 {
-        self.euclid() * angle_diff.cos()
     }
 }
