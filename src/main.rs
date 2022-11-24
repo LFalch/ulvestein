@@ -183,8 +183,7 @@ impl World {
         }
 
         if (forwards ^ backwards) || (go_left ^ go_right) {
-            let (dy, dx) = self.player_angle.sin_cos();
-            let dv = Vector2::new(dx, dy);
+            let dv = Vector2::unit_from_angle(self.player_angle);
             let dp = dv * (forwards as i8 - backwards as i8) as f32 + dv.hat() * (go_right as i8 - go_left as i8) as f32;
             let dp = dp.set_len(delta * WALK_SPEED);
 
