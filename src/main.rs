@@ -44,8 +44,10 @@ fn main() -> Result<(), Error> {
     };
     let mut world = World::new();
 
-    let mut last = Instant::now();
+    let mut last_draw = Instant::now();
     let mut last_fpss = VecDeque::new();
+
+    let mut last_update = last_draw;
 
     event_loop.run(move |event, _, control_flow| {
         // Draw the current frame
@@ -62,18 +64,21 @@ fn main() -> Result<(), Error> {
             }
 
             let now = Instant::now();
-            let fps = 1. / (now - last).as_secs_f64();
+            let fps = 1. / (now - last_draw).as_secs_f64();
             last_fpss.push_back(fps);
             while last_fpss.len() > 4 {
                 last_fpss.pop_front();
             }
             let avg_fps = last_fpss.iter().copied().sum::<f64>() / last_fpss.len() as f64;
             window.set_title(&format!("Ulvestein - FPS {avg_fps:.0}"));
-            last = now;
+            last_draw = now;
         }
 
         // Handle input events
         if input.update(&event) {
+            let now = Instant::now();
+            let delta = (now - last_update).as_secs_f32();
+
             // Close events
             if input.key_pressed(VirtualKeyCode::Escape) || input.quit() {
                 *control_flow = ControlFlow::Exit;
@@ -105,8 +110,9 @@ fn main() -> Result<(), Error> {
                 info!("fov: {}", world.fov);
             }
 
-            world.update(left, right, forwards, backwards, go_left, go_right);
+            world.update(delta, left, right, forwards, backwards, go_left, go_right);
             window.request_redraw();
+            last_update = now;
         }
     });
 }
@@ -129,13 +135,13 @@ impl World {
             player_p: Point2::new(6., 6.),
             player_angle: 0.,
             map: Map::new([
-                [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],
+                [2, 2, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],
                 [2, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
                 [2, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
                 [2, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 7, 0, 0, 2],
                 [2, 15, 15, 15, 21, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
                 [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
-                [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+                [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 27, 0, 2],
                 [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
                 [2, 0, 0, 0, 0, 0, 0, 0, 22, 0, 0, 0, 0, 0, 0, 2],
                 [2, 0, 0, 0, 0, 0, 0, 22, 22, 22, 0, 0, 0, 0, 0, 2],
@@ -144,7 +150,7 @@ impl World {
                 [2, 0, 0, 26, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
                 [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
                 [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
-                [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 2],
+                [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],
             ]),
             fov: FOV,
             clip: true,
@@ -167,27 +173,34 @@ impl World {
     }
 
     /// Update the `World` internal state; bounce the box around the screen.
-    fn update(&mut self, left: bool, right: bool, forwards: bool, backwards: bool, go_left: bool, go_right: bool) {
-        const TURN_SPEED: f32 = 0.05;
-        const WALK_SPEED: f32 = 0.05;
+    fn update(&mut self, delta: f32, left: bool, right: bool, forwards: bool, backwards: bool, go_left: bool, go_right: bool) {
+        const TURN_SPEED: f32 = 105.  /* degrees */ / 180. * consts::PI;
+        const WALK_SPEED: f32 = 2.3;
 
         if left || right {
-            self.player_angle += TURN_SPEED * (right as i8 - left as i8) as f32;
+            self.player_angle += delta * TURN_SPEED * (right as i8 - left as i8) as f32;
             self.player_angle %= consts::TAU;
         }
 
-        if forwards || backwards || go_left || go_right {
+        if (forwards ^ backwards) || (go_left ^ go_right) {
             let (dy, dx) = self.player_angle.sin_cos();
             let dv = Vector2::new(dx, dy);
             let dp = dv * (forwards as i8 - backwards as i8) as f32 + dv.hat() * (go_right as i8 - go_left as i8) as f32;
-            let dp = dp.set_len(WALK_SPEED);
-            let cast = self.map.ray_cast(self.player_p, dp, true);
+            let dp = dp.set_len(delta * WALK_SPEED);
+
+            let orig_p = self.player_p;
+
+            self.player_p = self.player_p + dp;
+
             if self.clip {
-                if cast.full() {
-                    self.player_p = cast.into_point();
+                const PUSH: f32 = 0.005;
+                let (clip, side) = self.map.ray_cast(orig_p, dp, true).clip();
+
+                if let Some(side) = side {
+                    let wall_dir = side.flip().into_unit_vector();
+                    let to_wall = clip.proj(wall_dir);
+                    self.player_p = self.player_p - to_wall - PUSH * wall_dir;
                 }
-            } else {
-                self.player_p = self.player_p + dp;
             }
         }
     }
@@ -197,71 +210,76 @@ impl World {
     /// Assumes the default texture format: `wgpu::TextureFormat::Rgba8UnormSrgb`
     fn draw(&self, mut frame: Frame) {
         let fov_rad = self.fov * consts::PI / 180.;
+
         for (x, angle) in (0..WIDTH).map(|x| (x, self.player_angle - 0.5 * fov_rad + fov_rad * x as f32 / WIDTH as f32)) {
-            let (mat, dist, u, dark) = {
-                let (y, x) = angle.sin_cos();
-                let cast = self.map.ray_cast(self.player_p, Vector2::new(x, y), false);
+            let cast = self.map.ray_cast(self.player_p, Vector2::unit_from_angle(angle), false);
 
-                let p = cast.into_point();
+            let mut last_point = self.player_p;
+            let mut total_distance = 0.;
 
-                // Find the corresponding texture x-coordinate
-                let frac_x = p.x.fract();
-                // Use the dark texture if we came from the side
-                let dark = frac_x == 0.;
-                // Do some nonsense to make sure the image doesn't flip
-                let u = if dark {
-                    if x < 0. {
-                        1. - p.y.fract()
-                    } else {
-                        p.y.fract()
+            let lines = cast.into_iter().filter_map(|cp| {
+                total_distance += (cp.point - last_point).norm(); 
+                last_point = cp.point;
+                let dist = total_distance * (angle-self.player_angle).cos();
+
+                match cp.cast_type {
+                    CastPointType::Void(_) => None,
+                    // TODO: fix reflection
+                    CastPointType::Reflection(mat, side)
+                    | CastPointType::SeeThrough(mat, side)
+                    | CastPointType::Termination(mat, side) => {
+                        let dark = matches!(side, Side::Left | Side::Right);
+                        let u = match side {
+                            Side::Left => cp.point.y.fract(),
+                            Side::Up => 1. - cp.point.x.fract(),
+                            Side::Right => 1. - cp.point.y.fract(),
+                            Side::Down => cp.point.x.fract(),
+                        };
+
+                        Some((dark, u, dist, mat))
                     }
-                } else {
-                    if y < 0. {
-                        frac_x
-                    } else {
-                        1. - frac_x
-                    }
-                };
+                    CastPointType::Destination => unreachable!(),
+                }
+            }).collect::<Vec<_>>();
 
-                (cast.material().unwrap_or(Mat::invalid()), (p - self.player_p).norm() * (angle - self.player_angle).cos(), u, dark)
-            };
+            for (dark, u, dist, mat) in lines.into_iter().rev() {
+                // Calculate height of line to draw on screen, TODO: change
+                let line_height = HEIGHT as f32 / dist;
+                let line_height = if line_height.is_infinite() { i32::MAX } else { line_height as i32 };
 
-            // Calculate height of line to draw on screen, TODO: change
-            let line_height = HEIGHT as f32 / dist;
-            let line_height = if line_height.is_infinite() { i32::MAX } else { line_height as i32 };
+                // doing the halving for each term eliminates overflow and looks smoother
+                const HALF_HEIGHT: i32 = HEIGHT as i32 / 2;
+                let half_line_height = line_height / 2;
 
-            // doing the halving for each term eliminates overflow and looks smoother
-            const HALF_HEIGHT: i32 = HEIGHT as i32 / 2;
-            let half_line_height = line_height / 2;
+                let mat_top = HALF_HEIGHT - half_line_height;
+                let mat_bot = HALF_HEIGHT + half_line_height;
 
-            let mat_top = HALF_HEIGHT - half_line_height;
-            let mat_bot = HALF_HEIGHT + half_line_height;
+                for y in 0..HEIGHT as i32 {
+                    let below_ceiling = mat_top <= y;
+                    let over_ground = y <= mat_bot;
 
-            for y in 0..HEIGHT as i32 {
-                let below_ceiling = mat_top <= y;
-                let over_ground = y <= mat_bot;
+                    let c = match (over_ground, below_ceiling) {
+                        (true, true) => match self.textures.get(2 * (mat.id() as usize - 1) + dark as usize) {
+                            Some(tex) => {
+                                let v = (y - mat_top) as f32 / (mat_bot - mat_top) as f32;
 
-                let c = match (over_ground, below_ceiling) {
-                    (true, true) => match self.textures.get(2 * (mat.id() as usize - 1) + dark as usize) {
-                        Some(tex) => {
-                            let v = (y - mat_top) as f32 / (mat_bot - mat_top) as f32;
-
-                            tex.get_pixel_f(u, v).rgb()
+                                tex.get_pixel_f(u, v)
+                            }
+                            _ => continue
                         }
-                        _ => continue
-                    }
-                    (true, false) => Colour::new(0x00, 0x00, 0xff),
-                    (false, true) => Colour::new(0xff, 0x00, 0x00),
-                    (false, false) => Colour::new(0xff, 0xff, 0xff),
-                };
+                        (true, false) => Colour::new(0x00, 0x00, 0xff).alpha(0xff),
+                        (false, true) => Colour::new(0xff, 0x00, 0x00).alpha(0xff),
+                        (false, false) => Colour::new(0xff, 0xff, 0xff).alpha(0x5f),
+                    };
 
-                frame.draw_rgb(x, y as u32, c);
+                    frame.draw_rgba(x, y as u32, c);
+                }
             }
         }
 
         let gun_x = (WIDTH - self.gun.width as u32) / 2;
         let gun_y = HEIGHT - self.gun.height() as u32;
-        self.gun.draw_at(&mut frame, gun_x, gun_y)
+        self.gun.draw_at(&mut frame, gun_x, gun_y);
     }
 }
 
@@ -346,6 +364,19 @@ impl TColour {
     pub fn rgb(self) -> Colour {
         Colour { r: self.r, g: self.g, b: self.b }
     }
+    pub fn on(self, other: TColour) -> TColour {
+        if other.a == 0 || self.a == 255 {
+            self
+        } else if other.a == 255 {
+            let r = u8_frac_mul(self.r, self.a) + u8_frac_mul(other.r, 255 - self.a);
+            let g = u8_frac_mul(self.g, self.a) + u8_frac_mul(other.g, 255 - self.a);
+            let b = u8_frac_mul(self.b, self.a) + u8_frac_mul(other.b, 255 - self.a);
+
+            TColour::new(r, g, b, 255)
+        } else {
+            todo!()
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -362,20 +393,15 @@ impl Frame<'_> {
     }
     fn draw_rgba(&mut self, x: u32, y: u32, p: TColour) {
         let alpha = p.a;
-        let p = p.rgb();
         if alpha != 0 {
             if alpha == 255 {
-                self.draw_rgb(x, y, p);
+                self.draw_rgb(x, y, p.rgb());
             } else {
                 let i = coords_to_index(x, y);
                 if let Some(orig) = self.buffer.get(i*4..i*4+3) {
-                    let (or, og, ob) = (orig[0], orig[1], orig[2]);
+                    let orig = Colour::new(orig[0], orig[1], orig[2]).alpha(255);
 
-                    let r = u8_frac_mul(p.r, alpha) + u8_frac_mul(or, 255 - alpha);
-                    let g = u8_frac_mul(p.g, alpha) + u8_frac_mul(og, 255 - alpha);
-                    let b = u8_frac_mul(p.b, alpha) + u8_frac_mul(ob, 255 - alpha);
-
-                    self.draw_rgb(x, y, Colour::new(r, g, b));
+                    self.draw_rgb(x, y, p.on(orig).rgb());
                 }
             }
         }

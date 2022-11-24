@@ -11,6 +11,10 @@ impl Vector2 {
     pub fn norm(&self) -> f32 {
         self.x.hypot(self.y)
     }
+    pub fn unit_from_angle(angle: f32) -> Self {
+        let (y, x) = angle.sin_cos();
+        Self::new(x, y)
+    }
     pub fn dot(self, rhs: Self) -> f32 {
         self.x * rhs.x + self.y * rhs.y
     }
@@ -25,8 +29,16 @@ impl Vector2 {
             Vector2::new(0., 0.)
         }
     }
-}
+    pub fn proj(self, other: Self) -> Vector2 {
+        let divisor = 1. / other.dot(other);
+        if divisor.is_finite() {
+            self.dot(other) * other * divisor
+        } else {
+            Vector2::new(0., 0.)
+        }
+    }
 
+}
 pub type Point2 = Vector2;
 
 impl Add for Vector2 {

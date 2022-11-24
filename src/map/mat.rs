@@ -17,9 +17,11 @@ impl Mat {
         self.id != 0
     }
     pub fn is_opaque(&self) -> bool {
-        self.id != 0
+        self.id != 0 && self.id != 27
     }
-    pub fn is_reflecive(&self) -> bool {
-        self.id == 26
+    pub fn is_reflective(&self) -> bool {
+        // false
+        // TODO: uncomment this when reflection works properly
+        self.id == 27
     }
 }
