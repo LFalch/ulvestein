@@ -11,6 +11,12 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 use winit_input_helper::WinitInputHelper;
 
+pub mod vec;
+pub mod map;
+
+use self::map::*;
+use self::vec::*;
+
 const WIDTH: u32 = 320;
 const HEIGHT: u32 = 240;
 const FACTOR: u32 = 4;
@@ -105,10 +111,6 @@ fn main() -> Result<(), Error> {
     });
 }
 
-pub mod map;
-
-use self::map::*;
-
 /// Representation of the application state. In this example, a box will bounce around the screen.
 struct World {
     player_p: Point2,
@@ -126,7 +128,7 @@ impl World {
         Self {
             player_p: Point2::new(6., 6.),
             player_angle: 0.,
-            map: Map {grid: [
+            map: Map::new([
                 [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],
                 [2, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
                 [2, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
@@ -143,7 +145,7 @@ impl World {
                 [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
                 [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
                 [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 2],
-            ]},
+            ]),
             fov: FOV,
             clip: true,
             gun: Texture::from_file("gun.png"),
@@ -221,7 +223,7 @@ impl World {
                     }
                 };
 
-                (cast.material().unwrap_or(255), (p - self.player_p).norm() * (angle - self.player_angle).cos(), u, dark)
+                (cast.material().unwrap_or(Mat::invalid()), (p - self.player_p).norm() * (angle - self.player_angle).cos(), u, dark)
             };
 
             // Calculate height of line to draw on screen, TODO: change
@@ -240,7 +242,7 @@ impl World {
                 let over_ground = y <= mat_bot;
 
                 let c = match (over_ground, below_ceiling) {
-                    (true, true) => match self.textures.get(2 * (mat as usize - 1) + dark as usize) {
+                    (true, true) => match self.textures.get(2 * (mat.id() as usize - 1) + dark as usize) {
                         Some(tex) => {
                             let v = (y - mat_top) as f32 / (mat_bot - mat_top) as f32;
 

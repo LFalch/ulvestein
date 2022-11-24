@@ -1,75 +1,19 @@
-use std::ops::{Add, Sub, Mul};
-
 use super::WIDTH;
+use crate::vec::*;
 
-#[derive(Debug, Copy, Clone)]
-pub struct Vector2{
-    pub x: f32,
-    pub y: f32,
-}
+mod mat;
 
-impl Vector2 {
-    pub const fn new(x: f32, y: f32) -> Self { Vector2 {x, y} }
-    pub fn norm(&self) -> f32 {
-        self.x.hypot(self.y)
-    }
-    pub fn dot(self, rhs: Self) -> f32 {
-        self.x * rhs.x + self.y * rhs.y
-    }
-    pub fn hat(self) -> Self {
-        Vector2 { x: -self.y, y: self.x }
-    }
-    pub fn set_len(self, len: f32) -> Self {
-        let scale = len / self.norm();
-        if scale.is_finite() {
-            scale * self
-        } else {
-            Vector2::new(0., 0.)
-        }
-    }
-}
-
-pub type Point2 = Vector2;
-
-impl Add for Vector2 {
-    type Output = Self;
-    fn add(self, rhs: Self) -> Self::Output {
-        Vector2::new(self.x+rhs.x, self.y+rhs.y)
-    }
-}
-
-impl Sub for Vector2 {
-    type Output = Self;
-    fn sub(self, rhs: Self) -> Self::Output {
-        Vector2::new(self.x-rhs.x, self.y-rhs.y)
-    }
-}
-
-impl Mul<Vector2> for f32 {
-    type Output = Vector2;
-    fn mul(self, rhs: Vector2) -> Self::Output {
-        Vector2::new(rhs.x*self, rhs.y*self)
-    }
-}
-
-impl Mul<f32> for Vector2 {
-    type Output = Vector2;
-    fn mul(self, rhs: f32) -> Self::Output {
-        Vector2::new(self.x*rhs, self.y*rhs)
-    }
-}
-
-pub type Mat = u8;
-
-fn is_solid(mat: Mat) -> bool {
-    mat != 0
-}
+pub use mat::*;
 
 pub struct Map<const N: usize, const M: usize> {
     pub grid: [[Mat; N]; M],
 }
 
 impl<const N: usize, const M: usize> Map<N, M> {
+    pub fn new(arg: [[u8; N]; M]) -> Map<N, M> {
+        Map { grid: arg.map(|a| a.map(|id| Mat::from_id(id))) }
+    }
+
     fn get(&self, x: i32, y: i32) -> Option<Mat> {
         self.grid.get(y as u32 as usize).and_then(|a| a.get(x as u32 as usize)).copied()
     }
@@ -92,7 +36,7 @@ impl<const N: usize, const M: usize> Map<N, M> {
             let mat = self.get(gx, gy);
 
             if let Some(mat) = mat {
-                if is_solid(mat) {
+                if mat.is_solid() {
                     break RayCast::n_half(mat, cur, dest-cur, to_wall);
                 }
                 if cur.x < 0. || cur.y < 0. {
