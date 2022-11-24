@@ -159,10 +159,10 @@ pub struct CastPoints {
 }
 
 impl CastPoints {
-    pub fn clip(&self) -> (Point2, Option<Side>) {
+    pub fn clip(&self) -> (Vector2, Option<Side>) {
         let target = self.target.expect("clip only makes sense on finite casts");
 
-        let mut point = Vector2::new(f32::NAN, f32::NAN);
+        let mut point = Point2::new(f32::NAN, f32::NAN);
         let mut side = None;
         for cp in &self.inner {
             point = cp.point;
