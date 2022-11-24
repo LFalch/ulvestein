@@ -20,8 +20,6 @@ use self::vec::*;
 const WIDTH: u32 = 320;
 const HEIGHT: u32 = 240;
 const FACTOR: u32 = 4;
-const WINDOW_WIDTH: f64 = WIDTH as f64;
-const WINDOW_HEIGHT: f64 = HEIGHT as f64;
 const FOV: f32 = 65.;
 
 fn main() -> Result<(), Error> {
@@ -31,8 +29,8 @@ fn main() -> Result<(), Error> {
     let window = {
         WindowBuilder::new()
             .with_title("Ulvestein")
-            .with_inner_size(LogicalSize::new(FACTOR as f64 * WINDOW_WIDTH, FACTOR as f64 * WINDOW_HEIGHT))
-            .with_min_inner_size(LogicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
+            .with_inner_size(LogicalSize::new(FACTOR * WIDTH, FACTOR * HEIGHT))
+            .with_min_inner_size(LogicalSize::new(WIDTH, HEIGHT))
             .build(&event_loop)
             .unwrap()
     };
@@ -208,18 +206,28 @@ impl World {
     ///
     /// Assumes the default texture format: `wgpu::TextureFormat::Rgba8UnormSrgb`
     fn draw(&self, mut frame: Frame) {
-        let fov_rad = self.fov * consts::PI / 180.;
+        // Tangent of half of the FOV (used for finding the coordinates of the first ray)
+        let tan_half_fov_rad = (self.fov * consts::PI / 360.).tan();
+        let dir = Vector2::unit_from_angle(self.player_angle);
 
-        for (x, angle) in (0..WIDTH).map(|x| (x, self.player_angle - 0.5 * fov_rad + fov_rad * x as f32 / WIDTH as f32)) {
-            let cast = self.map.ray_cast(self.player_p, Vector2::unit_from_angle(angle), false);
+        // Unit vector pointing to the right
+        let right_dir = dir.hat();
+        const HALF_WIDTH: f32 = (WIDTH / 2) as f32;
+        let first_ray = dir / tan_half_fov_rad - dir.hat();
+
+        for (x, ray) in (0..WIDTH).map(|x| (x, first_ray + right_dir * (x as f32 / HALF_WIDTH))) {
+            let cast = self.map.ray_cast(self.player_p, ray, false);
 
             let mut last_point = self.player_p;
             let mut total_distance = 0.;
+            let fisheye_correction_factor;
+
+            fisheye_correction_factor = ray.dot(dir) / ray.norm();
 
             let lines = cast.into_iter().filter_map(|cp| {
-                total_distance += (cp.point - last_point).norm(); 
+                total_distance += (cp.point - last_point).norm() * fisheye_correction_factor; 
                 last_point = cp.point;
-                let dist = total_distance * (angle-self.player_angle).cos();
+                let dist = total_distance;
 
                 match cp.cast_type {
                     CastPointType::Void(_) => None,
@@ -268,7 +276,7 @@ impl World {
                         }
                         (true, false) => Colour::new(0x00, 0x00, 0xff).alpha(0xff),
                         (false, true) => Colour::new(0xff, 0x00, 0x00).alpha(0xff),
-                        (false, false) => Colour::new(0xff, 0xff, 0xff).alpha(0x5f),
+                        (false, false) => Colour::new(0xff, 0xff, 0xff).alpha(0x07),
                     };
 
                     frame.draw_rgba(x, y as u32, c);

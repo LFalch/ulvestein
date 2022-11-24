@@ -1,4 +1,4 @@
-use std::ops::{Add, Sub, Mul};
+use std::ops::{Add, Sub, Mul, Neg, Div};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Vector2 {
@@ -19,9 +19,16 @@ impl Vector2 {
         Self::new(x, y)
     }
     #[inline(always)]
+    pub fn direction_angle(self) -> f32 {
+        self.y.atan2(self.x)
+    }
+    #[inline(always)]
     pub fn dot(self, rhs: Self) -> f32 {
         self.x * rhs.x + self.y * rhs.y
     }
+    /// (x, y) -> (-y, x)
+    ///
+    /// Turns the vector ninety degrees
     #[inline(always)]
     pub fn hat(self) -> Self {
         Vector2 { x: -self.y, y: self.x }
@@ -41,6 +48,14 @@ impl Vector2 {
         } else {
             Vector2::new(0., 0.)
         }
+    }
+}
+
+impl Neg for Vector2 {
+    type Output = Self;
+    #[inline(always)]
+    fn neg(self) -> Self::Output {
+        Vector2::new(-self.x, -self.y)
     }
 }
 
@@ -73,6 +88,14 @@ impl Mul<f32> for Vector2 {
     #[inline(always)]
     fn mul(self, rhs: f32) -> Self::Output {
         Vector2::new(self.x*rhs, self.y*rhs)
+    }
+}
+
+impl Div<f32> for Vector2 {
+    type Output = Vector2;
+    #[inline(always)]
+    fn div(self, rhs: f32) -> Self::Output {
+        Vector2::new(self.x/rhs, self.y/rhs)
     }
 }
 
