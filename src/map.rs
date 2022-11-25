@@ -62,7 +62,10 @@ impl Map {
                             "nonsolid" | "walkthrough" => solid = false,
                             "transparent" | "seethrough" => transparent = true,
                             "opaque" => transparent = false,
-                            "reflective" => reflective = true,
+                            "reflective" => {
+                                transparent = true;
+                                reflective = true;
+                            }
                             _ => panic!("uknown property {property} of texture {texture}"),
                         }
                     }
@@ -171,10 +174,10 @@ impl Map {
     pub fn render_ray_cast(&self, orig_p: Point2, dp: Vector2) -> Vec<(bool, f32, f32, Mat)> {
         let cast = ray_cast(orig_p, dp, false, 8,
             |x, y| self.get(x, y),
-            |m| self.props(m).solid,
+            |m| self.props(m).solid || !self.props(m).transparent,
             |m| !self.props(m).transparent,
             |m| self.props(m).reflective,
-            |m| !self.props(m).solid,
+            |m| self.props(m).transparent
         );
 
         let mut last_point = orig_p;
