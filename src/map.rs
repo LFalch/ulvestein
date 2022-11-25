@@ -1,5 +1,7 @@
+use std::{path::Path, fs::File, io::{BufReader, BufRead}, collections::HashMap};
+
 use super::WIDTH;
-use crate::vec::*;
+use crate::{vec::*, Texture};
 
 mod mat;
 mod ray_caster;
@@ -7,27 +9,150 @@ mod ray_caster;
 pub use ray_caster::*;
 pub use mat::*;
 
-pub struct Map<const N: usize, const M: usize> {
-    pub grid: [[Mat; N]; M],
+#[derive(Debug, Clone)]
+pub struct Map {
+    pub name: Box<str>,
+    textures: Vec<(Texture, Texture)>,
+    properties: Vec<Properties>,
+    grid: Vec<Mat>,
+    width: i32,
 }
 
-impl<const N: usize, const M: usize> Map<N, M> {
-    pub fn new(arg: [[u8; N]; M]) -> Map<N, M> {
-        Map { grid: arg.map(|a| a.map(|id| Mat::from_id(id))) }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Properties {
+    solid: bool,
+    transparent: bool,
+    reflective: bool,
+    door: bool,
+}
+
+impl Map {
+    pub fn from_file<P: AsRef<Path>>(path: P) -> (Self, i32, i32, Side) {
+        let f = BufReader::new(File::open(path).unwrap());
+        let mut lines = f.lines();
+
+        let name = lines.next().unwrap().unwrap().trim().to_owned().into_boxed_str();
+        assert_eq!(lines.next().unwrap().unwrap().trim(), "");
+
+        let mut textures = Vec::new();
+        let mut properties = Vec::new();
+        let mut material_map = HashMap::new();
+        material_map.insert(' ', Mat::air());
+        material_map.insert('<', Mat::air());
+        material_map.insert('>', Mat::air());
+        material_map.insert('^', Mat::air());
+        material_map.insert('v', Mat::air());
+
+        loop {
+            match lines.next().unwrap().unwrap().trim() {
+                "" => break,
+                s => {
+                    let mut elements = s.split_whitespace();
+                    // TODO: check char length
+                    let c = elements.next().unwrap().chars().next().unwrap();
+                    let texture_dark = elements.next_back().unwrap();
+                    let texture = elements.next_back().unwrap();
+
+                    let (mut solid, mut transparent, mut reflective, mut door) = (true, false, false, false);
+
+                    for property in elements {
+                        match property {
+                            "door" => door = true,
+                            "solid" => solid = true,
+                            "nonsolid" | "walkthrough" => solid = false,
+                            "transparent" | "seethrough" => transparent = true,
+                            "opaque" => transparent = false,
+                            "reflective" => reflective = true,
+                            _ => panic!("uknown property {property} of texture {texture}"),
+                        }
+                    }
+
+                    let texture = Texture::from_file(texture);
+                    let texture_dark = Texture::from_file(texture_dark);
+                    textures.push((texture, texture_dark));
+                    properties.push(Properties {solid, transparent, reflective, door});
+
+                    material_map.insert(c, Mat::from_len(textures.len()));
+                }
+            }
+        }
+
+        let mut grid = Vec::new();
+        let mut width = 0;
+        let mut player = None;
+
+        for line in lines {
+            let line = line.unwrap();
+            let line = line.trim();
+            let mut len = 0;
+
+            for c in line.chars() {
+                let mat = material_map[&c];
+                grid.push(mat);
+
+                if mat.is_air() {
+                    let w = if width == 0 { i32::MAX } else { width };
+                    let (i, j) = (grid.len() as i32 % w, grid.len() as i32 / w);
+
+                    match c {
+                        '>' => player = Some((i, j, Side::Right)),
+                        '<' => player = Some((i, j, Side::Left)),
+                        '^' => player = Some((i, j, Side::Up)),
+                        'v' => player = Some((i, j, Side::Down)),
+                        _ => (),
+                    }
+                }
+                
+                len += 1;
+            }
+            if width == 0 {
+                width = len;
+            } else if width != len {
+                panic!("this line was {len} long, but previous lines were all {width}");
+            }
+        }
+
+        let (i, j, s) = player.expect("no player on map");
+
+        (Self {
+            name,
+            textures,
+            properties,
+            grid,
+            width,
+        }, i, j, s)
     }
 
-    fn get(&self, x: i32, y: i32) -> Option<Mat> {
-        self.grid.get(y as u32 as usize).and_then(|a| a.get(x as u32 as usize)).copied()
+    pub fn get_tex(&self, mat: Mat, dark: bool) -> &Texture {
+        let (light, non_light) = &self.textures[mat.index()];
+        if dark {
+            non_light
+        } else {
+            light
+        }
+    }
+    pub fn get(&self, x: i32, y: i32) -> Option<Mat> {
+        let x = x as isize as usize;
+        let y = y as isize as usize;
+        let w = self.width as isize as usize;
+
+        let index = y.checked_mul(w)?.checked_add(x)?;
+        self.grid.get(index).copied()
+    }
+    fn props(&self, mat: &Mat) -> Properties {
+        if mat.is_air() { Properties { solid: false, transparent: true, reflective: false, door: false } } else {
+            self.properties[mat.index()]
+        }
     }
 
     /// Return the vector going into a solid material to be **clip**ped off
     pub fn move_ray_cast(&self, orig_p: Point2, dp: Vector2) -> Vector2 {
         let (clip, side) = ray_cast(orig_p, dp, true, 8,
             |x, y| self.get(x, y),
-            |n| n.is_solid(),
-            |n| n.is_solid(),
+            |m| self.props(m).solid,
+            |m| self.props(m).solid,
             |_| false,
-            |n| !n.is_solid(),
+            |m| !self.props(m).solid,
         ).clip();
 
         const PUSH: f32 = 0.005;
@@ -46,10 +171,10 @@ impl<const N: usize, const M: usize> Map<N, M> {
     pub fn render_ray_cast(&self, orig_p: Point2, dp: Vector2) -> Vec<(bool, f32, f32, Mat)> {
         let cast = ray_cast(orig_p, dp, false, 8,
             |x, y| self.get(x, y),
-            |n| n.is_solid(),
-            |n| n.is_opaque(),
-            |n| n.is_reflective(),
-            |n| !n.is_solid(),
+            |m| self.props(m).solid,
+            |m| !self.props(m).transparent,
+            |m| self.props(m).reflective,
+            |m| !self.props(m).solid,
         );
 
         let mut last_point = orig_p;

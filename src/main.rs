@@ -119,9 +119,8 @@ fn main() -> Result<(), Error> {
 struct World {
     player_p: Point2,
     player_angle: f32,
-    map: Map<16, 16>,
+    map: Map,
     fov: f32,
-    textures: Box<[Texture]>,
     gun: Texture,
     clip: bool,
 }
@@ -129,44 +128,15 @@ struct World {
 impl World {
     /// Create a new `World` instance that can draw a moving box.
     fn new() -> Self {
+        let (map, x, y, s) = Map::from_file("map.txt");
+        info!("Map name: {}", map.name);
         Self {
-            player_p: Point2::new(6., 6.),
-            player_angle: 0.,
-            map: Map::new([
-                [2, 2, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],
-                [2, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
-                [2, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
-                [2, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 7, 0, 0, 2],
-                [2, 15, 15, 15, 21, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
-                [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
-                [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 27, 0, 2],
-                [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
-                [2, 0, 0, 0, 0, 0, 0, 0, 22, 0, 0, 0, 0, 0, 0, 2],
-                [2, 0, 0, 0, 0, 0, 0, 22, 22, 22, 0, 0, 0, 0, 0, 2],
-                [2, 0, 0, 0, 0, 0, 0, 0, 22, 0, 0, 0, 0, 0, 0, 2],
-                [2, 0, 26, 26, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
-                [2, 0, 0, 26, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
-                [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
-                [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
-                [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],
-            ]),
+            map,
+            player_p: Point2::new(x as f32, y as f32),
+            player_angle: s.into_unit_vector().direction_angle(),
             fov: FOV,
             clip: true,
-            gun: Texture::from_file("gun.png"),
-            textures: {
-                let mut img = image::open("spritesheet.png").unwrap();
-                let mut textures = Vec::new();
-
-                for y in 0..9 {
-                    for x in 0..6 {
-                        let cropped = img.crop(x*64, y*64, 64, 64);
-                        let img = cropped.as_rgba8().unwrap();
-                        textures.push(Texture::from_rgba(img));
-                    }
-                }
-
-                textures.into_boxed_slice()
-            },
+            gun: Texture::from_file("tex/gun.png"),
         }
     }
 
@@ -230,13 +200,11 @@ impl World {
                     let over_ground = y <= mat_bot;
 
                     let c = match (over_ground, below_ceiling) {
-                        (true, true) => match self.textures.get(2 * (mat.id() as usize - 1) + dark as usize) {
-                            Some(tex) => {
-                                let v = (y - mat_top) as f32 / (mat_bot - mat_top) as f32;
+                        (true, true) => {
+                            let tex = self.map.get_tex(mat, dark);
+                            let v = (y - mat_top) as f32 / (mat_bot - mat_top) as f32;
 
-                                tex.get_pixel_f(u, v)
-                            }
-                            _ => continue
+                            tex.get_pixel_f(u, v)
                         }
                         (true, false) => Colour::new(0x00, 0x00, 0xff).alpha(0xff),
                         (false, true) => Colour::new(0xff, 0x00, 0x00).alpha(0xff),

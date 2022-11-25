@@ -4,24 +4,17 @@ pub struct Mat {
 }
 
 impl Mat {
-    pub fn from_id(id: u8) -> Self {
-        Mat { id }
+    pub(super) const fn air() -> Self {
+        Mat { id: 0 }
     }
-    pub fn id(&self) -> u8 {
-        self.id
+    pub(super) const fn is_air(self) -> bool {
+        self.id == 0
     }
-    pub const fn invalid() -> Self {
-        Mat { id: 255 }
+    pub(super) fn from_len(index: usize) -> Self {
+        debug_assert_ne!(index, 0, "air should be constructed with ::air()");
+        Mat { id: index as u8 }
     }
-    pub fn is_solid(&self) -> bool {
-        self.id != 0
-    }
-    pub fn is_opaque(&self) -> bool {
-        self.id != 0 && self.id != 27
-    }
-    pub fn is_reflective(&self) -> bool {
-        // false
-        // TODO: uncomment this when reflection works properly
-        self.id == 27
+    pub(super) fn index(&self) -> usize {
+        self.id as usize - 1
     }
 }
