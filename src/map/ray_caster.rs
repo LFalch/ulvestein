@@ -1,6 +1,6 @@
 use crate::vec::{Point2, Vector2};
 
-pub fn ray_cast<M, FG, FN, FT, FR, FP>(from: Point2, dist: Vector2, finite: bool, node_limit: usize, get_mat: FG, is_node: FN,
+pub fn ray_cast<M: PartialEq + Clone, FG, FN, FT, FR, FP>(from: Point2, dist: Vector2, finite: bool, node_limit: usize, get_mat: FG, is_node: FN,
     is_terminator: FT, is_reflector: FR, is_pass_througher: FP, skip_first_check: bool) -> CastPoints<M>
 where FG: Fn(i32, i32) -> Option<M>, FN: Fn(&M) -> bool, FT: Fn(&M) -> bool, FR: Fn(&M) -> bool, FP: Fn(&M) -> bool {
     let dest = from + dist;
@@ -24,6 +24,7 @@ where FG: Fn(i32, i32) -> Option<M>, FN: Fn(&M) -> bool, FT: Fn(&M) -> bool, FR:
     let mut side = Side::from_vec(dist);
 
     let mut do_mat_check = !skip_first_check;
+    let mut last_hit_material = None;
 
     loop {
         if points.len() >= node_limit {
@@ -44,6 +45,7 @@ where FG: Fn(i32, i32) -> Option<M>, FN: Fn(&M) -> bool, FT: Fn(&M) -> bool, FR:
             let mat = get_mat(gx, gy);
 
             if let Some(mat) = mat {
+                let mat_copy = mat.clone();
                 if is_node(&mat) {
                     if is_terminator(&mat) {
                         points.push(CastPoint::terminated(cur, mat, side));
@@ -62,9 +64,18 @@ where FG: Fn(i32, i32) -> Option<M>, FN: Fn(&M) -> bool, FT: Fn(&M) -> bool, FR:
 
                         break;
                     } else if is_pass_througher(&mat) {
-                        points.push(CastPoint::pass(cur, mat, side));
+                        let mut node_point = true;
+                        if let Some(lm) = last_hit_material {
+                            if lm == mat {
+                                node_point = false;
+                            }
+                        }
+                        if node_point {
+                            points.push(CastPoint::pass(cur, mat, side));
+                        }
                     }
                 }
+                last_hit_material = Some(mat_copy);
             } else {
                 points.push(CastPoint::void(cur, side));
                 break;
