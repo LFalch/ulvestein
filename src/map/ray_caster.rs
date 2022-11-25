@@ -49,7 +49,6 @@ where FG: Fn(i32, i32) -> Option<M>, FN: Fn(&M) -> bool, FT: Fn(&M) -> bool, FR:
                         points.push(CastPoint::terminated(cur, mat, side));
                         break;
                     } else if is_reflector(&mat) {
-                        // TODO: fix this
                         points.push(CastPoint::reflect(cur, mat, side));
 
                         let mut dist = if finite { dest - cur } else { dist };
@@ -59,10 +58,7 @@ where FG: Fn(i32, i32) -> Option<M>, FN: Fn(&M) -> bool, FT: Fn(&M) -> bool, FR:
                         }
 
                         let cps = ray_cast(cur, dist, finite, node_limit-points.len(), get_mat, is_node, is_terminator, is_reflector, is_pass_througher, false);
-
-                        let mut old_points = points;
-                        points = cps.inner;
-                        points.append(&mut old_points);
+                        points.extend(cps);
 
                         break;
                     } else if is_pass_througher(&mat) {
