@@ -190,14 +190,7 @@ impl World {
             self.player_p = self.player_p + dp;
 
             if self.clip {
-                const PUSH: f32 = 0.005;
-                let (clip, side) = self.map.ray_cast(orig_p, dp, true).clip();
-
-                if let Some(side) = side {
-                    let wall_dir = side.flip().into_unit_vector();
-                    let to_wall = clip.proj(wall_dir);
-                    self.player_p = self.player_p - to_wall - PUSH * wall_dir;
-                }
+                self.player_p = self.player_p - self.map.move_ray_cast(orig_p, dp);
             }
         }
     }
@@ -216,42 +209,13 @@ impl World {
         let first_ray = dir / tan_half_fov_rad - dir.hat();
 
         for (x, ray) in (0..WIDTH).map(|x| (x, first_ray + right_dir * (x as f32 / HALF_WIDTH))) {
-            let cast = self.map.ray_cast(self.player_p, ray, false);
+            let lines = self.map.render_ray_cast(self.player_p, ray);
 
-            let mut last_point = self.player_p;
-            let mut total_distance = 0.;
-            let fisheye_correction_factor;
-
-            fisheye_correction_factor = ray.dot(dir) / ray.norm();
-
-            let lines = cast.into_iter().filter_map(|cp| {
-                total_distance += (cp.point - last_point).norm() * fisheye_correction_factor; 
-                last_point = cp.point;
-                let dist = total_distance;
-
-                match cp.cast_type {
-                    CastPointType::Void(_) => None,
-                    // TODO: fix reflection
-                    CastPointType::Reflection(mat, side)
-                    | CastPointType::SeeThrough(mat, side)
-                    | CastPointType::Termination(mat, side) => {
-                        let dark = matches!(side, Side::Left | Side::Right);
-                        let u = match side {
-                            Side::Left => cp.point.y.fract(),
-                            Side::Up => 1. - cp.point.x.fract(),
-                            Side::Right => 1. - cp.point.y.fract(),
-                            Side::Down => cp.point.x.fract(),
-                        };
-
-                        Some((dark, u, dist, mat))
-                    }
-                    CastPointType::Destination => unreachable!(),
-                }
-            }).collect::<Vec<_>>();
+            let fisheye_correction_factor = ray.dot(dir) / ray.norm();
 
             for (dark, u, dist, mat) in lines.into_iter().rev() {
                 // Calculate height of line to draw on screen, TODO: change
-                let line_height = HEIGHT as f32 / dist;
+                let line_height = HEIGHT as f32 / dist / fisheye_correction_factor;
                 let line_height = if line_height.is_infinite() { i32::MAX } else { line_height as i32 };
 
                 // doing the halving for each term eliminates overflow and looks smoother
