@@ -1,18 +1,20 @@
 TEST ON EARTH
 
 b tex/brick1.png tex/brick1_dark.png
+B tex/brick2.png tex/brick2_dark.png
 d nonsolid door tex/door.png tex/door_dark.png
 r tex/blue_brick.png tex/blue_brick_dark.png
 w transparent tex/glass.png tex/glass_dark.png
-W reflective tex/glass.png tex/glass_dark.png
+m reflective tex/mirror.png tex/mirror.png
+j tex/jail_skelly.png tex/jail_skelly_dark.png
 
-bbbbbbbbbbbbbbbbbbbbbb
-b              b b   b
-b W     b bb b b bbb b
-b W   > d    b b   b b
-b       bwwwwb   b   b
-b   r        bbbbbbb b
-b  rrr      bb b     b
-b   r            bbbbb
-b            bbb     b
-bbbbbbbbbbbbbbbbbbbbbb
+BBBBBBBBBBBBBBBBBBBBBB
+m              b m   B
+m w     b bb b b bbb B
+m w   > d    b b   b B
+m       bwwwwb   b   B
+m   r        bbbbbbb B
+m  rjr      bb b     B
+m                bbbbB
+m            bbb     B
+BBBBBBBBBBBBBBBBBBBBBB
