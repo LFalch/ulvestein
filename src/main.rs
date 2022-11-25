@@ -132,7 +132,7 @@ impl World {
         info!("Map name: {}", map.name);
         Self {
             map,
-            player_p: Point2::new(x as f32, y as f32),
+            player_p: Point2::new(x as f32 + 0.5, y as f32 + 0.5),
             player_angle: s.into_unit_vector().direction_angle(),
             fov: FOV,
             clip: true,

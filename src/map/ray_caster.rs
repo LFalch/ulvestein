@@ -1,7 +1,7 @@
 use crate::vec::{Point2, Vector2};
 
 pub fn ray_cast<M, FG, FN, FT, FR, FP>(from: Point2, dist: Vector2, finite: bool, node_limit: usize, get_mat: FG, is_node: FN,
-    is_terminator: FT, is_reflector: FR, is_pass_througher: FP) -> CastPoints<M>
+    is_terminator: FT, is_reflector: FR, is_pass_througher: FP, skip_first_check: bool) -> CastPoints<M>
 where FG: Fn(i32, i32) -> Option<M>, FN: Fn(&M) -> bool, FT: Fn(&M) -> bool, FR: Fn(&M) -> bool, FP: Fn(&M) -> bool {
     let dest = from + dist;
 
@@ -23,6 +23,8 @@ where FG: Fn(i32, i32) -> Option<M>, FN: Fn(&M) -> bool, FT: Fn(&M) -> bool, FR:
 
     let mut side = Side::from_vec(dist);
 
+    let mut do_mat_check = !skip_first_check;
+
     loop {
         if points.len() >= node_limit {
             break;
@@ -33,43 +35,46 @@ where FG: Fn(i32, i32) -> Option<M>, FN: Fn(&M) -> bool, FT: Fn(&M) -> bool, FR:
             break;
         }
 
-        if cur.x < 0. || cur.y < 0. {
-            points.push(CastPoint::void(cur, side));
-            break; 
-        }
-
-        let mat = get_mat(gx, gy);
-
-        if let Some(mat) = mat {
-            if is_node(&mat) {
-                if is_terminator(&mat) {
-                    points.push(CastPoint::terminated(cur, mat, side));
-                    break;
-                } else if is_reflector(&mat) {
-                    // TODO: fix this
-                    points.push(CastPoint::reflect(cur, mat, side));
-
-                    let mut dist = if finite { dest - cur } else { dist };
-                    match side {
-                        Side::Left | Side::Right => dist.x = -dist.x,
-                        Side::Up | Side::Down => dist.y = -dist.y,
-                    }
-
-                    let cps = ray_cast(cur, dist, finite, node_limit-points.len(), get_mat, is_node, is_terminator, is_reflector, is_pass_througher);
-
-                    let mut old_points = points;
-                    points = cps.inner;
-                    points.append(&mut old_points);
-
-                    break;
-                } else if is_pass_througher(&mat) {
-                    points.push(CastPoint::pass(cur, mat, side));
-                }
+        if do_mat_check {
+            if cur.x < 0. || cur.y < 0. {
+                points.push(CastPoint::void(cur, side));
+                break; 
             }
-        } else {
-            points.push(CastPoint::void(cur, side));
-            break;
+
+            let mat = get_mat(gx, gy);
+
+            if let Some(mat) = mat {
+                if is_node(&mat) {
+                    if is_terminator(&mat) {
+                        points.push(CastPoint::terminated(cur, mat, side));
+                        break;
+                    } else if is_reflector(&mat) {
+                        // TODO: fix this
+                        points.push(CastPoint::reflect(cur, mat, side));
+
+                        let mut dist = if finite { dest - cur } else { dist };
+                        match side {
+                            Side::Left | Side::Right => dist.x = -dist.x,
+                            Side::Up | Side::Down => dist.y = -dist.y,
+                        }
+
+                        let cps = ray_cast(cur, dist, finite, node_limit-points.len(), get_mat, is_node, is_terminator, is_reflector, is_pass_througher, false);
+
+                        let mut old_points = points;
+                        points = cps.inner;
+                        points.append(&mut old_points);
+
+                        break;
+                    } else if is_pass_througher(&mat) {
+                        points.push(CastPoint::pass(cur, mat, side));
+                    }
+                }
+            } else {
+                points.push(CastPoint::void(cur, side));
+                break;
+            }
         }
+        do_mat_check = true;
 
         let nearest_corner = Point2::new(x_dir.on(gx as f32), y_dir.on(gy as f32));
         let distance = nearest_corner - cur;

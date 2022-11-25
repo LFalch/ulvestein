@@ -95,7 +95,8 @@ impl Map {
 
                 if mat.is_air() {
                     let w = if width == 0 { i32::MAX } else { width };
-                    let (i, j) = (grid.len() as i32 % w, grid.len() as i32 / w);
+                    let l = grid.len() as i32 - 1;
+                    let (i, j) = (l % w, l / w);
 
                     match c {
                         '>' => player = Some((i, j, Side::Right)),
@@ -156,6 +157,7 @@ impl Map {
             |m| self.props(m).solid,
             |_| false,
             |m| !self.props(m).solid,
+            false,
         ).clip();
 
         const PUSH: f32 = 0.005;
@@ -177,7 +179,8 @@ impl Map {
             |m| self.props(m).solid || !self.props(m).transparent,
             |m| !self.props(m).transparent,
             |m| self.props(m).reflective,
-            |m| self.props(m).transparent
+            |m| self.props(m).transparent,
+            true,
         );
 
         let mut last_point = orig_p;
