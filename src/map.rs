@@ -1,6 +1,5 @@
 use std::{path::Path, fs::File, io::{BufReader, BufRead}, collections::HashMap};
 
-use super::WIDTH;
 use crate::{vec::*, Texture};
 
 mod mat;
@@ -211,22 +210,4 @@ impl Map {
                 }
             }).collect::<Vec<_>>()
     }
-}
-
-pub const fn index_to_coords(i: usize) -> (u32, u32) {
-    let x = (i % WIDTH as usize) as u32;
-    let y = (i / WIDTH as usize) as u32;
-
-    (x, y)
-}
-
-pub const fn coords_to_index(x: u32, y: u32) -> usize {
-    y as usize * WIDTH as usize + x as usize
-}
-
-#[test]
-fn test() {
-    let (x, y) = index_to_coords(124);
-    assert_eq!(index_to_coords(124), index_to_coords(coords_to_index(x, y)));
-    assert_eq!(124, coords_to_index(x, y));
 }
