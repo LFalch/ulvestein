@@ -15,7 +15,7 @@ pub struct Fov {
 impl Fov {
     pub fn new_from_degrees(fov_deg: f32) -> Self {
         let fov = fov_deg.to_radians();
-        let fov_vert = (WIDTH as f32 / HEIGHT as f32 * (0.5 * fov).sin()).atan();
+        let fov_vert = 2. * (HEIGHT as f32 / WIDTH as f32 * (0.5 * fov).sin()).atan();
         let tan_half_fov = (0.5 * fov).tan();
         // Happens to also be the same as the distance to the projection plane
         let height_coefficient = 0.5 * WIDTH as f32 / (0.5 * fov).sin();
