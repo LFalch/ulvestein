@@ -51,9 +51,11 @@ impl Texture {
     }
     /// `u` and `v` are expected to be between 0 and 1
     pub fn get_pixel_f(&self, u: f32, v: f32) -> TColour {
-        let x = (u * (self.width - 1) as f32) as usize;
+        let u = u.rem_euclid(1.);
+        let v = v.rem_euclid(1.);
+        let x = (u * self.width as f32).floor() as usize;
         let height = self.height();
-        let y = (v * (height - 1) as f32) as usize;
+        let y = (v * height as f32).floor() as usize;
 
         self.buffer[y*self.width as usize+x]
     }

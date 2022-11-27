@@ -87,15 +87,14 @@ impl World {
                     let over_ground = y <= mat_bot;
 
                     let c = match (over_ground, below_ceiling) {
-                        (true, true) => {
+                        (true, false) => Colour::new(0x00, 0x00, 0xff).alpha(0xff),
+                        (false, true) => Colour::new(0xff, 0x00, 0x00).alpha(0xff),
+                        _ => {
                             let tex = self.map.get_tex(mat, dark);
                             let v = (y - mat_top) as f32 / (mat_bot - mat_top) as f32;
 
                             tex.get_pixel_f(u, v)
                         }
-                        (true, false) => Colour::new(0x00, 0x00, 0xff).alpha(0xff),
-                        (false, true) => Colour::new(0xff, 0x00, 0x00).alpha(0xff),
-                        (false, false) => Colour::new(0xff, 0xff, 0xff).alpha(0x07),
                     };
 
                     frame.draw_rgba(x, y as u32, c);
