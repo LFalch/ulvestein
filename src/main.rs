@@ -13,9 +13,11 @@ use winit_input_helper::WinitInputHelper;
 
 pub mod vec;
 pub mod map;
+pub mod fov;
 
 use self::map::*;
 use self::vec::*;
+use self::fov::*;
 
 const WIDTH: u32 = 320;
 const HEIGHT: u32 = 240;
@@ -100,12 +102,10 @@ fn main() -> Result<(), Error> {
                 world.clip = !world.clip;
             }
             if input.key_pressed_os(VirtualKeyCode::Plus) {
-                world.fov += 5.;
-                info!("fov: {}", world.fov);
+                world.fov.change_fov(5.);
             }
             if input.key_pressed_os(VirtualKeyCode::Minus) {
-                world.fov -= 5.;
-                info!("fov: {}", world.fov);
+                world.fov.change_fov(-5.);
             }
 
             world.update(delta, left, right, forwards, backwards, go_left, go_right);
@@ -120,7 +120,7 @@ struct World {
     player_p: Point2,
     player_angle: f32,
     map: Map,
-    fov: f32,
+    fov: Fov,
     gun: Texture,
     clip: bool,
 }
@@ -134,7 +134,7 @@ impl World {
             map,
             player_p: Point2::new(x as f32 + 0.5, y as f32 + 0.5),
             player_angle: s.into_unit_vector().direction_angle(),
-            fov: FOV,
+            fov: Fov::new_from_degrees(FOV),
             clip: true,
             gun: Texture::from_file("tex/gun.png"),
         }
@@ -169,14 +169,12 @@ impl World {
     ///
     /// Assumes the default texture format: `wgpu::TextureFormat::Rgba8UnormSrgb`
     fn draw(&self, mut frame: Frame) {
-        // Tangent of half of the FOV (used for finding the coordinates of the first ray)
-        let tan_half_fov_rad = (self.fov * consts::PI / 360.).tan();
         let dir = Vector2::unit_from_angle(self.player_angle);
 
         // Unit vector pointing to the right
         let right_dir = dir.hat();
         const HALF_WIDTH: f32 = (WIDTH / 2) as f32;
-        let first_ray = dir / tan_half_fov_rad - dir.hat();
+        let first_ray = dir / self.fov.tan_half_fov - dir.hat();
 
         for (x, ray) in (0..WIDTH).map(|x| (x, first_ray + right_dir * (x as f32 / HALF_WIDTH))) {
             let lines = self.map.render_ray_cast(self.player_p, ray);
@@ -184,8 +182,8 @@ impl World {
             let fisheye_correction_factor = ray.dot(dir) / ray.norm();
 
             for (dark, u, dist, mat) in lines.into_iter().rev() {
-                // Calculate height of line to draw on screen, TODO: change
-                let line_height = HEIGHT as f32 / dist / fisheye_correction_factor;
+                // Calculate height of line to draw on screen
+                let line_height = self.fov.height_coefficient / dist / fisheye_correction_factor;
                 let line_height = if line_height.is_infinite() { i32::MAX } else { line_height as i32 };
 
                 // doing the halving for each term eliminates overflow and looks smoother
