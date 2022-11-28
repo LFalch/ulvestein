@@ -7,14 +7,15 @@ r tex/blue_brick.png tex/blue_brick_dark.png
 w transparent tex/glass.png tex/glass_dark.png
 m reflective tex/mirror.png tex/mirror.png
 j tex/jail_skelly.png tex/jail_skelly_dark.png
+s thing 0.25 tex/statue.png
 
 BBBBBBBBBBBBBBBBBBBBBB
-m              b m   B
+m              bsm   B
 m w     b bb b b bbb B
 m w   > d    b b   b B
 m       bwwwwb   b   B
 m   r        bbbbbbb B
 m  rjr      bb b     B
-m                bbbbB
+m   s            bbbbB
 m            bbb     B
 BBBBBBBBBBBBBBBBBBBBBB

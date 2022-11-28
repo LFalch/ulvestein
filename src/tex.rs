@@ -26,7 +26,7 @@ impl Colour {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Texture {
     buffer: Box<[TColour]>,
     width: u16,
@@ -58,6 +58,11 @@ impl Texture {
         let y = (v * height as f32).floor() as usize;
 
         self.buffer[y*self.width as usize+x]
+    }
+    pub fn draw_line_at(&self, frame: &mut Frame, x: u32, y: u32, u: f32, h: u32) {
+        for (y, v) in (y..y.saturating_add(h)).map(|sy| (sy, (sy as f32 - y as f32) / h as f32)) {
+            frame.draw_rgba(x, y, self.get_pixel_f(u, v));
+        }
     }
     /// Draws texture at offset
     pub fn draw_at(&self, frame: &mut Frame, x: u32, y: u32) {

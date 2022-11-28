@@ -1,6 +1,6 @@
 use std::{path::Path, fs::File, io::{BufReader, BufRead}, collections::HashMap};
 
-use crate::{vec::*, Texture};
+use crate::{vec::*, Texture, world::thing::Thing};
 
 mod mat;
 mod ray_caster;
@@ -26,7 +26,7 @@ struct Properties {
 }
 
 impl Map {
-    pub fn from_file<P: AsRef<Path>>(path: P) -> (Self, i32, i32, Side) {
+    pub fn from_file<P: AsRef<Path>>(path: P) -> (Self, i32, i32, Side, Vec<Thing>, Vec<Texture>) {
         let f = BufReader::new(File::open(path).unwrap());
         let mut lines = f.lines();
 
@@ -41,6 +41,8 @@ impl Map {
         material_map.insert('>', Mat::air());
         material_map.insert('^', Mat::air());
         material_map.insert('v', Mat::air());
+        let mut thing_map = HashMap::new();
+        let mut thing_texes = Vec::new();
 
         loop {
             match lines.next().unwrap().unwrap().trim() {
@@ -53,6 +55,7 @@ impl Map {
                     let texture = elements.next_back().unwrap();
 
                     let (mut solid, mut transparent, mut reflective, mut door) = (true, false, false, false);
+                    let mut thing = false;
 
                     for property in elements {
                         match property {
@@ -65,21 +68,39 @@ impl Map {
                                 transparent = true;
                                 reflective = true;
                             }
+                            "thing" => thing = true,
                             _ => panic!("uknown property {property} of texture {texture}"),
                         }
                     }
 
-                    let texture = Texture::from_file(texture);
-                    let texture_dark = Texture::from_file(texture_dark);
-                    textures.push((texture, texture_dark));
-                    properties.push(Properties {solid, transparent, reflective, door});
+                    if thing {
+                        let width = texture.parse::<f32>().expect("width to be a number");
+                        let texture = Texture::from_file(texture_dark);
 
-                    material_map.insert(c, Mat::from_len(textures.len()));
+                        let i = if let Some(i) = thing_texes.iter().position(|t| t == &texture) {
+                            i
+                        } else {
+                            let i = thing_texes.len();
+                            thing_texes.push(texture);
+                            i
+                        };
+
+                        thing_map.insert(c, (width, i));
+                        material_map.insert(c, Mat::air());
+                    } else {
+                        let texture = Texture::from_file(texture);
+                        let texture_dark = Texture::from_file(texture_dark);
+                        textures.push((texture, texture_dark));
+                        properties.push(Properties {solid, transparent, reflective, door});
+
+                        material_map.insert(c, Mat::from_len(textures.len()));
+                    }
                 }
             }
         }
 
         let mut grid = Vec::new();
+        let mut things = Vec::new();
         let mut width = 0;
         let mut player = None;
 
@@ -102,7 +123,11 @@ impl Map {
                         '<' => player = Some((i, j, Side::Left)),
                         '^' => player = Some((i, j, Side::Up)),
                         'v' => player = Some((i, j, Side::Down)),
-                        _ => (),
+                        ' ' => (),
+                        _ => {
+                            let &(w, t) = thing_map.get(&c).expect("character was neither a player nor declared");
+                            things.push(Thing::new(Point2::new(i as f32 + 0.5, j as f32 + 0.5), w, t));
+                        }
                     }
                 }
                 
@@ -123,7 +148,7 @@ impl Map {
             properties,
             grid,
             width,
-        }, i, j, s)
+        }, i, j, s, things, thing_texes)
     }
 
     pub fn get_tex(&self, mat: Mat, dark: bool) -> &Texture {
@@ -172,7 +197,7 @@ impl Map {
     /// that show what the ray encountered travelling in this direction
     ///
     /// Since rays do not stop at every node, this is a list and should be drawn in reverse order
-    pub fn render_ray_cast(&self, orig_p: Point2, dp: Vector2) -> Vec<(bool, f32, f32, Mat)> {
+    pub fn render_ray_cast(&self, orig_p: Point2, dp: Vector2) -> Vec<(bool, f32, (Point2, Vector2, f32), f32, Mat)> {
         let cast = ray_cast(orig_p, dp, false, 8,
             |x, y| self.get(x, y),
             |m| self.props(m).solid || !self.props(m).transparent,
@@ -186,7 +211,11 @@ impl Map {
         let mut total_distance = 0.;
 
         cast.into_iter().filter_map(|cp| {
-                total_distance += (cp.point - last_point).norm();
+                let last_dist = total_distance;
+                let p = last_point;
+
+                let dist_vect = cp.point - last_point;
+                total_distance += dist_vect.norm();
                 last_point = cp.point;
                 let dist = total_distance;
 
@@ -204,7 +233,7 @@ impl Map {
                             Side::Down => cp.point.x.fract(),
                         };
 
-                        Some((dark, u, dist, mat))
+                        Some((dark, u, (p, dist_vect, last_dist), dist, mat))
                     }
                     CastPointType::Destination => unreachable!(),
                 }
